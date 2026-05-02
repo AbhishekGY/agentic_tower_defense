@@ -511,13 +511,21 @@ class PygameRenderer:
         title = self.font_title.render("Agent Activity Panel", True, FONT_BRIGHT)
         self.screen.blit(title, (x + 12, y + 10))
 
-        # Agent cards
+        # Agent cards — live status from bus when available
         card_h = (h - 50) // 3 - 8
-        agents = [
-            ("Scout Agent", SCOUT_COLOR, "Scanning...", "Waiting for Phase 2"),
-            ("Commander Agent", COMMANDER_COLOR, "Idle", "Waiting for Phase 2"),
-            ("Builder Agent", BUILDER_COLOR, "Manual Mode", self._get_last_build_action()),
-        ]
+        if self.message_bus:
+            s = self.message_bus.agent_statuses
+            agents = [
+                ("Scout Agent",     SCOUT_COLOR,     s["Scout"]["status"],     s["Scout"]["last_action"]),
+                ("Commander Agent", COMMANDER_COLOR, s["Commander"]["status"], s["Commander"]["last_action"]),
+                ("Builder Agent",   BUILDER_COLOR,   s["Builder"]["status"],   s["Builder"]["last_action"]),
+            ]
+        else:
+            agents = [
+                ("Scout Agent",     SCOUT_COLOR,     "Scanning...",  "Waiting for agents"),
+                ("Commander Agent", COMMANDER_COLOR, "Idle",         "Waiting for agents"),
+                ("Builder Agent",   BUILDER_COLOR,   "Manual Mode",  self._get_last_build_action()),
+            ]
 
         for i, (name, color, status, last_action) in enumerate(agents):
             cy = y + 38 + i * (card_h + 8)
@@ -554,8 +562,8 @@ class PygameRenderer:
                     action_surf = self.font_small.render(action_text, True, FONT_COLOR)
             self.screen.blit(action_surf, (x + 12 + action_label.get_width(), y + 46))
 
-        # Turret selection (for builder card in manual mode)
-        if "Builder" in name:
+        # Turret selection hints (manual mode only)
+        if "Builder" in name and self.config.mode == "manual":
             sel_y = y + 66
             sel_label = self.font_small.render("Selected: ", True, FONT_DIM)
             self.screen.blit(sel_label, (x + 12, sel_y))
@@ -563,12 +571,8 @@ class PygameRenderer:
             sel_cost = TURRET_TYPES[self.selected_turret_type]["cost"]
             sel_surf = self.font_small.render(f"{sel_type} (${sel_cost})", True, BUILDER_COLOR)
             self.screen.blit(sel_surf, (x + 12 + sel_label.get_width(), sel_y))
-
-            # Key hints
-            hint_y = sel_y + 18
-            hints = "1=Basic  2=Splash  3=Sniper"
-            hint_surf = self.font_small.render(hints, True, FONT_DIM)
-            self.screen.blit(hint_surf, (x + 12, hint_y))
+            hint_surf = self.font_small.render("1=Basic  2=Splash  3=Sniper", True, FONT_DIM)
+            self.screen.blit(hint_surf, (x + 12, sel_y + 18))
 
     def _get_last_build_action(self) -> str:
         for msg in reversed(self.message_log):
@@ -577,6 +581,13 @@ class PygameRenderer:
         return "None"
 
     # --- Drawing: Message Feed ---
+
+    _AGENT_COLORS = {
+        "Scout": SCOUT_COLOR,
+        "Commander": COMMANDER_COLOR,
+        "Builder": BUILDER_COLOR,
+    }
+    _URGENT_BG = (80, 20, 20)
 
     def _draw_message_feed(self, snap: StateSnapshot):
         x = self.msgfeed_x
@@ -592,33 +603,64 @@ class PygameRenderer:
         title = self.font_title.render("Message Feed", True, FONT_BRIGHT)
         self.screen.blit(title, (x + 12, y + 8))
 
-        # Messages (most recent first, limited to visible area)
+        # Build display list from bus (agent mode) or local log (manual mode)
+        if self.message_bus:
+            raw = self.message_bus.get_display_log()
+            display = [
+                {
+                    "tick": m.tick,
+                    "sender": m.sender,
+                    "content": m.content,
+                    "color": self._AGENT_COLORS.get(m.sender, FONT_COLOR),
+                    "urgent": m.type == "urgent",
+                }
+                for m in raw
+            ]
+        else:
+            display = [
+                {**m, "urgent": False}
+                for m in self.message_log
+            ]
+
+        if not display:
+            empty = self.font_small.render("No messages yet.", True, FONT_DIM)
+            self.screen.blit(empty, (x + 12, y + 30))
+            return
+
         msg_y = y + 30
         line_h = 17
         max_lines = (h - 38) // line_h
+        visible = display[-max_lines:]
 
-        visible = self.message_log[-max_lines:] if self.message_log else []
         for msg in reversed(visible):
             if msg_y + line_h > y + h - 4:
                 break
-            tick_surf = self.font_small.render(f"TICK {msg['tick']:>3}", True, msg["color"])
+            color = msg["color"]
+
+            # Urgent highlight row
+            if msg.get("urgent"):
+                pygame.draw.rect(self.screen, self._URGENT_BG,
+                                 (x + 6, msg_y - 1, w - 12, line_h - 1), border_radius=2)
+
+            tick_surf = self.font_small.render(f"T{msg['tick']:>3}", True, color)
             self.screen.blit(tick_surf, (x + 12, msg_y))
 
             sep_surf = self.font_small.render(" | ", True, FONT_DIM)
             self.screen.blit(sep_surf, (x + 12 + tick_surf.get_width(), msg_y))
 
             content_x = x + 12 + tick_surf.get_width() + sep_surf.get_width()
-            sender_surf = self.font_small.render(f"{msg['sender']}: ", True, msg["color"])
+            sender_surf = self.font_small.render(f"{msg['sender']}: ", True, color)
             self.screen.blit(sender_surf, (content_x, msg_y))
 
-            text_surf = self.font_small.render(msg["content"], True, FONT_COLOR)
+            max_text_w = w - (content_x - x) - sender_surf.get_width() - 16
+            text = msg["content"]
+            text_surf = self.font_small.render(text, True, FONT_COLOR)
+            while text_surf.get_width() > max_text_w and len(text) > 4:
+                text = text[:-4] + "..."
+                text_surf = self.font_small.render(text, True, FONT_COLOR)
             self.screen.blit(text_surf, (content_x + sender_surf.get_width(), msg_y))
 
             msg_y += line_h
-
-        if not self.message_log:
-            empty = self.font_small.render("No messages yet. Place turrets to begin!", True, FONT_DIM)
-            self.screen.blit(empty, (x + 12, y + 30))
 
     # --- Drawing: Game Over ---
 
