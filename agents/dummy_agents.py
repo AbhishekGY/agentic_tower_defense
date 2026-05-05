@@ -1,76 +1,18 @@
 """Dummy agents for Phase 2 — rule-based, no LLM calls."""
 from __future__ import annotations
-import math
 import re
 import random
 import time
 from agents.base_agent import BaseAgent
+from agents.perception import (
+    dist_to_base as _dist_to_base,
+    enemies_per_lane as _enemies_per_lane,
+    turrets_per_lane as _turrets_per_lane,
+    buildable_near_lane as _buildable_near_lane,
+)
 from game.state import Action, StateSnapshot
 from comms.message_bus import Message
 from config import TURRET_TYPES
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-def _dist(ax: float, ay: float, bx: float, by: float) -> float:
-    return math.sqrt((ax - bx) ** 2 + (ay - by) ** 2)
-
-
-def _dist_to_base(enemy, game_map) -> float:
-    bx, by = game_map.base_pos
-    return _dist(enemy.x, enemy.y, bx, by)
-
-
-def _enemies_per_lane(snapshot: StateSnapshot) -> dict[str, list]:
-    result = {lane.name: [] for lane in snapshot.game_map.lanes}
-    for e in snapshot.enemies:
-        if e.alive and not e.reached_base and e.lane_name in result:
-            result[e.lane_name].append(e)
-    return result
-
-
-def _turrets_per_lane(snapshot: StateSnapshot) -> dict[str, list]:
-    """Map each lane name to the list of turrets that can reach any of its waypoints."""
-    result = {lane.name: [] for lane in snapshot.game_map.lanes}
-    covered: dict[str, set] = {lane.name: set() for lane in snapshot.game_map.lanes}
-
-    for t in snapshot.turrets:
-        tx, ty = t.x + 0.5, t.y + 0.5
-        for lane in snapshot.game_map.lanes:
-            if (t.x, t.y) in covered[lane.name]:
-                continue
-            for wx, wy in lane.waypoints:
-                if _dist(tx, ty, wx + 0.5, wy + 0.5) <= t.range:
-                    result[lane.name].append(t)
-                    covered[lane.name].add((t.x, t.y))
-                    break
-    return result
-
-
-def _buildable_near_lane(
-    snapshot: StateSnapshot,
-    lane_name: str,
-    max_dist: float = 2.5,
-) -> list[tuple[int, int]]:
-    """Return unoccupied ground tiles within max_dist of any waypoint on the lane."""
-    lane = next((l for l in snapshot.game_map.lanes if l.name == lane_name), None)
-    if not lane:
-        return []
-    occupied = {(t.x, t.y) for t in snapshot.turrets}
-    candidates = []
-    for y in range(snapshot.game_map.height):
-        for x in range(snapshot.game_map.width):
-            if not snapshot.game_map.is_buildable(x, y):
-                continue
-            if (x, y) in occupied:
-                continue
-            for wx, wy in lane.waypoints:
-                if _dist(x + 0.5, y + 0.5, wx + 0.5, wy + 0.5) <= max_dist:
-                    candidates.append((x, y))
-                    break
-    return candidates
 
 
 # ---------------------------------------------------------------------------
