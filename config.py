@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass, field
 
 
@@ -84,6 +85,11 @@ class Config:
 
     screen_width: int = 1400
     screen_height: int = 860
+
+    # Communication chaos settings (Phase 4)
+    comm_drop_rate: float = 0.0       # 0.0–1.0 fraction of non-urgent msgs dropped
+    comm_delay_secs: float = 0.0      # extra delivery delay in seconds
+    comm_silent_agent: str = ""       # agent name to silence ("" = none)
 
     @property
     def effective_tick_interval(self) -> float:

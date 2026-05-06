@@ -5,18 +5,28 @@ from abc import ABC, abstractmethod
 from game.state import GameState, Action, StateSnapshot
 from comms.message_bus import MessageBus, Message
 
+STALE_TICKS = 8  # messages older than this are annotated stale
+
 
 class BaseAgent(ABC):
     role: str = ""
     think_interval: float = 4.0
 
-    def format_messages(self, messages: list[Message], current_tick: int) -> str:
+    def format_messages(
+        self,
+        messages: list[Message],
+        current_tick: int,
+        message_bus: MessageBus | None = None,
+    ) -> str:
         if not messages:
             return "  (no recent messages)"
         lines = []
         for msg in messages:
             age = current_tick - msg.tick
-            stale = " (stale)" if age > 8 else ""
+            is_stale = age > STALE_TICKS
+            stale = " (stale)" if is_stale else ""
+            if is_stale and message_bus is not None:
+                message_bus.metrics.record_stale_read(self.role, age)
             if msg.type == "direct":
                 lines.append(f"  [{age}t ago] {msg.sender}->you: \"{msg.content}\"{stale}")
             else:
@@ -38,6 +48,7 @@ class BaseAgent(ABC):
         raise NotImplementedError
 
     async def run(self, game_state: GameState, message_bus: MessageBus):
+        self._message_bus = message_bus  # available to subclasses during decide()
         message_bus.update_status(self.role, "Starting")
         while game_state.running:
             message_bus.update_status(self.role, "Thinking...")

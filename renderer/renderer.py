@@ -278,6 +278,20 @@ class PygameRenderer:
         wave_text = self.font_hud.render(f"Wave: {snap.current_wave}/{snap.total_waves}", True, FONT_COLOR)
         self.screen.blit(wave_text, (res_x + 30, y_row2))
 
+        # Comm chaos indicators (row 2, right of wave)
+        chaos_parts = []
+        cfg = self.config
+        if cfg.comm_drop_rate > 0:
+            chaos_parts.append(f"DROP:{cfg.comm_drop_rate:.0%}")
+        if cfg.comm_delay_secs > 0:
+            chaos_parts.append(f"DELAY:{cfg.comm_delay_secs:.1f}s")
+        if cfg.comm_silent_agent:
+            chaos_parts.append(f"SILENT:{cfg.comm_silent_agent[:3].upper()}")
+        if chaos_parts:
+            chaos_str = "  ".join(chaos_parts)
+            chaos_surf = self.font_small.render(chaos_str, True, (220, 80, 80))
+            self.screen.blit(chaos_surf, (res_x + 200, y_row2 + 2))
+
         # Speed buttons (right side)
         btn_size = 28
         btn_gap = 4

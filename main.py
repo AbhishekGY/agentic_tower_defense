@@ -44,16 +44,34 @@ def main():
     parser.add_argument("--speed", type=float, default=1.0)
     parser.add_argument("--mode", default="dummy", choices=["manual", "dummy", "llm"],
                         help="manual=click-to-place, dummy=rule-based agents, llm=LLM agents")
+    # Phase 4: communication chaos flags
+    parser.add_argument("--drop-rate", type=float, default=0.0, metavar="RATE",
+                        help="Fraction of non-urgent messages to drop (0.0-1.0)")
+    parser.add_argument("--delay", type=float, default=0.0, metavar="SECS",
+                        help="Extra delivery delay in seconds for all messages")
+    parser.add_argument("--silence", default="", metavar="AGENT",
+                        help="Silence outbound messages from this agent (Scout/Commander/Builder)")
     args = parser.parse_args()
 
-    config = Config(speed_multiplier=args.speed, mode=args.mode)
+    config = Config(
+        speed_multiplier=args.speed,
+        mode=args.mode,
+        comm_drop_rate=args.drop_rate,
+        comm_delay_secs=args.delay,
+        comm_silent_agent=args.silence,
+    )
     game_map = load_map(args.map)
     game_state = GameState(game_map, config)
 
     message_bus = None
     if config.mode in ("dummy", "llm"):
-        from comms.message_bus import MessageBus
-        message_bus = MessageBus()
+        from comms.message_bus import MessageBus, BusConfig
+        bus_config = BusConfig(
+            drop_rate=config.comm_drop_rate,
+            delay_secs=config.comm_delay_secs,
+            silent_agents={config.comm_silent_agent} if config.comm_silent_agent else set(),
+        )
+        message_bus = MessageBus(bus_config=bus_config)
 
     async_thread = threading.Thread(
         target=_run_async_loop,
@@ -64,6 +82,10 @@ def main():
 
     renderer = PygameRenderer(game_state, message_bus=message_bus, config=config)
     renderer.run()
+
+    # Print comm metrics summary after game ends
+    if message_bus is not None:
+        print("\n" + message_bus.metrics.summary())
 
     pygame.quit()
     sys.exit()

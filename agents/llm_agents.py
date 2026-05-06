@@ -168,7 +168,7 @@ class ScoutLLM(LLMAgent):
             f"BASE HP: {snapshot.base_hp}",
             "",
             "RECENT MESSAGES:",
-            self.format_messages(messages[-5:], snapshot.tick),
+            self.format_messages(messages[-5:], snapshot.tick, getattr(self, "_message_bus", None)),
         ]
         return "\n".join(lines)
 
@@ -226,7 +226,7 @@ class CommanderLLM(LLMAgent):
             f"WAVE: {snapshot.current_wave}/{snapshot.total_waves}",
             "",
             "RECENT MESSAGES (last 8):",
-            self.format_messages(messages[-8:], snapshot.tick),
+            self.format_messages(messages[-8:], snapshot.tick, getattr(self, "_message_bus", None)),
         ]
         return "\n".join(lines)
 
@@ -287,6 +287,6 @@ class BuilderLLM(LLMAgent):
             f"BASE HP: {snapshot.base_hp}",
             "",
             "RECENT MESSAGES (last 5):",
-            self.format_messages(messages[-5:], snapshot.tick),
+            self.format_messages(messages[-5:], snapshot.tick, getattr(self, "_message_bus", None)),
         ]
         return "\n".join(lines)
